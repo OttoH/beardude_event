@@ -15,9 +15,9 @@ class Event extends React.Component {
   }
   render () {
     if (!this.props.account.isAuthenticated) {
-      return (<Redirect to={'/console/login'}/>)
+      return <Redirect to={'/console/login'} />
     }
-    const that = this
+
     const eventList = (this.props.event && this.props.event.events) ? this.props.event.events.map(raceEvent => <li key={'event-' + raceEvent.id}>{raceEvent.nameCht}</li>) : <li>empty</li>
     return (<div className={css.container}>
       <Header />
