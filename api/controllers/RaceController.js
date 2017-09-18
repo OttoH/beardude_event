@@ -1,10 +1,13 @@
 /* eslint-disable no-console */
-/* global dataService, Event, Race, sails */
+/* global thirdPartyService, dataService, Event, Race, sails */
 
 'use strict'
 
-var updateFields = ['name', 'nameCht', 'laps', 'racerNumberAllowed', 'isEntryRace', 'isFinalRace', 'requirePacer', 'pacerEpc', 'pacerEpcSlave', 'advancingRules', 'registrationIds', 'raceStatus', 'result']
 var Q = require('q')
+var dbManager = sails.services.thirdpatryservice.setupFirebase('db')
+
+var updateFields = ['name', 'nameCht', 'laps', 'racerNumberAllowed', 'isEntryRace', 'isFinalRace', 'requirePacer', 'pacerEpc', 'pacerEpcSlave', 'advancingRules', 'registrationIds', 'raceStatus', 'result']
+
 var RaceController = {
   // input: {group: ID, event: ID, name: STR, nameCht: STR, laps: INT, racerNumberAllowed: INT, requirePacer: BOOL}, output: { races: [] }
   create: function (req, res) {
@@ -43,10 +46,19 @@ var RaceController = {
     Q.all(funcs)
     .then(function (output) {
       var races = output.map(function (data) { return data[0] })
-      if (toBroadcast) { sails.sockets.broadcast('rxdata', 'raceend', { races: races }) }
-      return res.ok({ races: races })
+      if (toBroadcast) {
+        dbManager.getInstance().updateData('rxdata', 'raceend', {
+          payload: races
+        }).then(function () {
+          return res.ok({ races: races })
+        })
+        // sails.sockets.broadcast('rxdata', 'raceend', { races: races })
+       }
     })
-    .catch(function (E) { return res.badRequest(E) })
+    .catch(function (E) {
+      console.log(E.message)
+      return res.badRequest(E)
+    })
   },
   // input: /:id output: { race: { id: ID } }
   delete: function (req, res) {
@@ -119,10 +131,17 @@ var RaceController = {
       return Race.update({ id: input.id }, { startTime: (input.startTime) ? input.startTime : Date.now(), raceStatus: 'started', slaveEpcMap: slaveEpcMap })
     })
     .then(function (raceData) {
-      sails.sockets.broadcast('rxdata', 'raceupdate', { races: raceData })
-      return res.ok({ races: raceData })
+      dbManager.getInstance().updateData('rxdata', 'raceupdate', {
+        payload: raceData
+      }).then(function () {
+        return res.ok({ races: raceData })
+      })
+      // sails.sockets.broadcast('rxdata', 'raceupdate', { races: raceData })
     })
-    .catch(function (E) { return res.badRequest(E) })
+    .catch(function (E) {
+      console.log(E.message)
+      return res.badRequest(E)
+    })
   },
   // input: { id: ID }, output: { races: [] }
   resetRace: function (req, res) {
@@ -133,10 +152,17 @@ var RaceController = {
       return Event.update({ id: output[0].event }, { ongoingRace: '' })
     })
     .then(function () {
-      sails.sockets.broadcast('rxdata', 'raceend', { races: output })
-      return res.ok({ races: output })
+      dbManager.getInstance().updateData('rxdata', 'raceend', {
+        payload: output
+      }).then(function () {
+        return res.ok({ races: output })
+      })
+      // sails.sockets.broadcast('rxdata', 'raceend', { races: output })
     })
-    .catch(function (E) { return res.badRequest(E) })
+    .catch(function (E) {
+      console.log(E.message)
+      return res.badRequest(E)
+    })
   },
   // input: {id: ID, endTime: TIMESTAMP}, output: { races: [] }
   endRace: function (req, res) {
@@ -152,10 +178,17 @@ var RaceController = {
       return Event.update({ id: output[0].event }, { ongoingRace: '' })
     })
     .then(function () {
-      sails.sockets.broadcast('rxdata', 'raceend', { races: output })
-      return res.ok({ races: output })
+      dbManager.getInstance().updateData('rxdata', 'raceend', {
+        payload: output
+      }).then(function () {
+        return res.ok({ races: output })
+      })
+      // sails.sockets.broadcast('rxdata', 'raceend', { races: output })
     })
-    .catch(function (E) { return res.badRequest(E) })
+    .catch(function (E) {
+      console.log(E.message)
+      return res.badRequest(E)
+    })
   },
   // get: 加入socket.io, post: 控制至尊機, rxdata: 至尊機發送讀卡資料, readerCtrl: 至尊機接收控制及發送狀態
   // input: { type: STR, payload: { eventId: ID } }
@@ -163,18 +196,34 @@ var RaceController = {
     var input = req.body
     if (input) {
       if (input.type === 'startreader') {
-        sails.sockets.broadcast('readerCtrl', input.type, input.payload)
-        return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+        dbManager.getInstance().updateData('readerCtrl', input.type, {
+          payload: input.payload
+        }).then(function () {
+          return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+        }).catch(function (E) {
+          console.log(E.message);
+        })
+        // sails.sockets.broadcast('readerCtrl', input.type, input.payload)
       }
-      sails.sockets.broadcast('readerCtrl', input.type, { result: input.payload })
-      return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+
+      dbManager.getInstance().updateData('readerCtrl', input.type, {
+        payload: input.payload
+      }).then(() => {
+        return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+      }).catch(function (E) {
+        console.log(E.message);
+      })
+      // sails.sockets.broadcast('readerCtrl', input.type, { result: input.payload })
+    } else {
+      return res.json({ result: 'join socket_channel_OK' })
     }
+    // TODO: remove later
     sails.sockets.join(req.query.sid, 'rxdata')
     sails.sockets.join(req.query.sid, 'readerCtrl')
-    return res.json({ result: 'join socket_channel_OK' })
   },
   // get: 加入socket.io, post: 發送讀卡資料
   // input: { type: STR, payload: {} }
+  // rxdata: 至尊機發送讀卡資料, readerCtrl: 至尊機接收控制及發送狀態
   socketImpinj: function (req, res) {
     var input = req.body
     if (input) {
@@ -182,21 +231,49 @@ var RaceController = {
         return RaceController.insertRfid(input.event, input.payload)
         .then(function (data) {
           if (data) {
-            if (data.races) { sails.sockets.broadcast('rxdata', 'raceupdate', data) }
-            if (data.event) { sails.sockets.broadcast('rxdata', 'testrfid', data) }
+            if (data.races) {
+              dbManager.getInstance().updateData('rxdata', 'raceupdate', {
+                payload: data
+              }).then(function () {
+                console.log('raceupdate updated');
+                return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+              })
+              // sails.sockets.broadcast('rxdata', 'raceupdate', data)
+            }
+            if (data.event) {
+              dbManager.getInstance().updateData('rxdata', 'testrfid', {
+                payload: data
+              }).then(function () {
+                console.log('update testrfid');
+                return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+              })
+              // sails.sockets.broadcast('rxdata', 'testrfid', data)
+            }
           }
-          return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+          // return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
         })
-        .catch(function (E) { return res.badRequest(E) })
+        .catch(function (E) {
+          console.log(E.message)
+          return res.badRequest(E)
+        })
+      } else {
+        dbManager.getInstance().updateData('readerCtrl', input.type, {
+          payload: input.payload
+        }).then(function () {
+          console.log('update readerCtrl', input.type);
+          return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+        }).catch(function (E) {
+          console.log(E.message);
+        })
       }
-      sails.sockets.broadcast('readerCtrl', input.type, { result: input.payload })
-      return res.json({ result: 'type-' + input.type + '_receive_OK', input: input })
+    } else {
+      // TODO: remove later
+      sails.sockets.join(req.query.sid, 'rxdata')
+      sails.sockets.join(req.query.sid, 'readerCtrl')
+      return res.json({ result: 'join socket_channel_OK' })
     }
-    // rxdata: 至尊機發送讀卡資料, readerCtrl: 至尊機接收控制及發送狀態
-    sails.sockets.join(req.query.sid, 'rxdata')
-    sails.sockets.join(req.query.sid, 'readerCtrl')
-    return res.json({ result: 'join socket_channel_OK' })
   },
+  // TODO: remove later
   // Public event, 只加入rxdata接收戰況更新
   socket: function (req, res) {
     sails.sockets.join(req.query.sid, 'rxdata')

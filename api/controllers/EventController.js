@@ -3,6 +3,7 @@
 'use strict'
 
 var moment = require('moment')
+var dbManager = sails.services.thirdpatryservice.setupFirebase('db')
 
 module.exports = {
   // input: { name: STR, nameCht: STR, startTime: DATETIME, endTime: DATETIME, lapDistance: INT, location: STR }, output: { event: {} }
@@ -57,9 +58,16 @@ module.exports = {
     Event.update({ id: req.body.id }, updateObj)
     .then(function (V) {
       if (updateObj.resultLatency) {
-        sails.sockets.broadcast('rxdata', 'eventlatencyupdate', { event: {resultLatency: V[0].resultLatency} })
+        dbManager.getInstance().updateData('rxdata', 'eventlatencyupdate', {
+          payload: { event: {resultLatency: V[0].resultLatency} }
+        }).then(function () {
+          console.log('eventlatencyupdate updated');
+          return res.ok({ event: V[0] })
+        })
+        // sails.sockets.broadcast('rxdata', 'eventlatencyupdate', { event: {resultLatency: V[0].resultLatency} })
+      } else {
+        return res.ok({ event: V[0] })
       }
-      return res.ok({ event: V[0] })
     })
     .catch(function (E) { return res.badRequest(E) })
   },
